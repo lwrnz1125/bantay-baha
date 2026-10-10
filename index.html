@@ -4,10 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Bantay Baha Monitor</title>
-    <!-- Gagamit tayo ng Chart.js para sa line chart -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        /* Naka-set sa 375px max-width para magkasya sa mobile phone */
         body { font-family: sans-serif; max-width: 375px; margin: 0 auto; padding: 10px; background: #f4f4f4; }
         .level-display { text-align: center; padding: 20px; border-radius: 8px; color: white; margin-bottom: 15px;}
         .normal { background-color: green; }
@@ -18,6 +16,9 @@
         table { width: 100%; border-collapse: collapse; font-size: 0.9em; background: white; }
         th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
         th { background-color: #f2f2f2; }
+        .analytics-box, .advisory-box { background: white; padding: 10px; border-radius: 8px; margin-bottom: 15px; font-size: 0.9em; border: 1px solid #ccc; }
+        button { width: 100%; padding: 15px; background-color: #0056b3; color: white; border: none; border-radius: 5px; font-size: 1.1em; font-weight: bold; cursor: pointer; margin-bottom: 15px; }
+        button:disabled { background-color: #aaa; }
     </style>
 </head>
 <body>
@@ -28,7 +29,16 @@
         <h3 id="status-text" style="margin:0;">Loading...</h3>
     </div>
 
+    <!-- Part E: Analytics Box -->
+    <div class="analytics-box" id="analytics-box">
+        <strong>Analytics:</strong> Loading data...
+    </div>
+
     <canvas id="levelChart"></canvas>
+
+    <!-- Part F: AI Advisory Button at Result Box -->
+    <button id="ai-btn" onclick="generateAdvisory()">Generate AI Advisory</button>
+    <div class="advisory-box" id="advisory-box" style="display: none;"></div>
 
     <h3>10 Latest Readings</h3>
     <table>
@@ -44,20 +54,53 @@
     </table>
 
     <script>
-        const API_URL = 'http://localhost:8000/api/readings'; // Babaguhin mamaya kapag na-deploy na
+        const API_READINGS = 'http://localhost:8000/api/readings';
+        const API_SUMMARY = 'http://localhost:8000/api/summary';
         let chartInstance = null;
 
         async function fetchReadings() {
             try {
-                const response = await fetch(API_URL);
+                const response = await fetch(API_READINGS);
                 const data = await response.json();
-                
-                if(data && data.length > 0) {
-                    updateUI(data);
+                if(data && data.length > 0) updateUI(data);
+            } catch (error) { console.error("Error:", error); }
+        }
+
+        async function fetchSummary() {
+            try {
+                const response = await fetch(API_SUMMARY);
+                const summary = await response.json();
+                if(summary && summary.average !== undefined) {
+                    document.getElementById('analytics-box').innerHTML = 
+                        `<strong>Analytics Summary:</strong><br>
+                        Avg: ${summary.average} cm | Min: ${summary.min} cm | Max: ${summary.max} cm<br>
+                        Trend: <span style="text-transform: capitalize; font-weight: bold; color: blue;">${summary.trend}</span><br>
+                        (Normal: ${summary.counts.normal} | Alert: ${summary.counts.alert} | Danger: ${summary.counts.danger})`;
+                }
+            } catch (error) { console.error("Error summary:", error); }
+        }
+
+        async function generateAdvisory() {
+            const btn = document.getElementById('ai-btn');
+            const advBox = document.getElementById('advisory-box');
+            btn.disabled = true;
+            btn.innerText = "Generating AI Advisory...";
+            advBox.style.display = "block";
+            advBox.innerHTML = "<em>Kumokonekta sa Gemini AI...</em>";
+
+            try {
+                const response = await fetch(API_SUMMARY + '?ai=true');
+                const data = await response.json();
+                if (data.advisory) {
+                    advBox.innerHTML = `<strong>Public Advisory:</strong><br><br>${data.advisory.replace(/\n/g, '<br>')}`;
+                } else {
+                    advBox.innerHTML = "Failed to load advisory.";
                 }
             } catch (error) {
-                console.error("Error fetching data:", error);
+                advBox.innerHTML = "Network error. Pakisubukan muli.";
             }
+            btn.disabled = false;
+            btn.innerText = "Generate AI Advisory";
         }
 
         function updateUI(data) {
@@ -67,8 +110,6 @@
             const statusText = document.getElementById('status-text');
 
             currentLevelText.innerText = currentReading + ' cm';
-
-            // Status logic based on requirements
             statusBox.className = 'level-display ';
             if (currentReading < 100) {
                 statusBox.classList.add('normal');
@@ -81,17 +122,14 @@
                 statusText.innerText = 'DANGER';
             }
 
-            // Update Table (10 latest readings)
             const tableBody = document.getElementById('table-body');
             tableBody.innerHTML = '';
-            const top10 = data.slice(0, 10);
-            top10.forEach(row => {
+            data.slice(0, 10).forEach(row => {
                 const time = new Date(row.timestamp).toLocaleTimeString();
                 tableBody.innerHTML += `<tr><td>${time}</td><td>${row.waterLevelCm}</td></tr>`;
             });
 
-            // Update Chart
-            updateChart(data.slice(0, 20).reverse()); // Kukunin ang 20 para sa chart, ire-reverse para tama ang timeline
+            updateChart(data.slice(0, 20).reverse());
         }
 
         function updateChart(chartData) {
@@ -106,24 +144,16 @@
             } else {
                 chartInstance = new Chart(ctx, {
                     type: 'line',
-                    data: {
-                        labels: labels,
-                        datasets: [{
-                            label: 'Trend (cm)',
-                            data: levels,
-                            borderColor: 'blue',
-                            fill: false,
-                            tension: 0.1
-                        }]
-                    },
-                    options: { animation: false } // Walang animation para mabilis ang 5-second refresh
+                    data: { labels: labels, datasets: [{ label: 'Trend (cm)', data: levels, borderColor: 'blue', fill: false, tension: 0.1 }] },
+                    options: { animation: false }
                 });
             }
         }
 
         // Auto-refresh tuwing 5 segundo
-        setInterval(fetchReadings, 5000);
-        fetchReadings(); // Unang tawag para hindi maghintay ng 5s
+        setInterval(() => { fetchReadings(); fetchSummary(); }, 5000);
+        fetchReadings(); 
+        fetchSummary();
     </script>
 </body>
 </html>
