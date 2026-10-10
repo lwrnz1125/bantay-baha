@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Bantay Baha Monitor</title>
+    <!-- Gagamit tayo ng Chart.js para sa line chart -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Naka-set sa 375px max-width para magkasya sa mobile phone */
+        body { font-family: sans-serif; max-width: 375px; margin: 0 auto; padding: 10px; background: #f4f4f4; }
+        .level-display { text-align: center; padding: 20px; border-radius: 8px; color: white; margin-bottom: 15px;}
+        .normal { background-color: green; }
+        .alert { background-color: orange; }
+        .danger { background-color: red; }
+        h1 { font-size: 2.5em; margin: 5px 0; }
+        canvas { background: white; border-radius: 8px; margin-bottom: 15px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9em; background: white; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+
+    <div id="status-box" class="level-display normal">
+        <p style="margin:0;">Current Water Level</p>
+        <h1 id="current-level">-- cm</h1>
+        <h3 id="status-text" style="margin:0;">Loading...</h3>
+    </div>
+
+    <canvas id="levelChart"></canvas>
+
+    <h3>10 Latest Readings</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Level (cm)</th>
+            </tr>
+        </thead>
+        <tbody id="table-body">
+            <tr><td colspan="2">Loading data...</td></tr>
+        </tbody>
+    </table>
+
+    <script>
+        const API_URL = 'http://localhost:8000/api/readings'; // Babaguhin mamaya kapag na-deploy na
+        let chartInstance = null;
+
+        async function fetchReadings() {
+            try {
+                const response = await fetch(API_URL);
+                const data = await response.json();
+                
+                if(data && data.length > 0) {
+                    updateUI(data);
+                }
+            } catch (error) {
+                console.error("Error fetching data:", error);
+            }
+        }
+
+        function updateUI(data) {
+            const currentReading = data[0].waterLevelCm;
+            const statusBox = document.getElementById('status-box');
+            const currentLevelText = document.getElementById('current-level');
+            const statusText = document.getElementById('status-text');
+
+            currentLevelText.innerText = currentReading + ' cm';
+
+            // Status logic based on requirements
+            statusBox.className = 'level-display ';
+            if (currentReading < 100) {
+                statusBox.classList.add('normal');
+                statusText.innerText = 'NORMAL';
+            } else if (currentReading < 150) {
+                statusBox.classList.add('alert');
+                statusText.innerText = 'ALERT';
+            } else {
+                statusBox.classList.add('danger');
+                statusText.innerText = 'DANGER';
+            }
+
+            // Update Table (10 latest readings)
+            const tableBody = document.getElementById('table-body');
+            tableBody.innerHTML = '';
+            const top10 = data.slice(0, 10);
+            top10.forEach(row => {
+                const time = new Date(row.timestamp).toLocaleTimeString();
+                tableBody.innerHTML += `<tr><td>${time}</td><td>${row.waterLevelCm}</td></tr>`;
+            });
+
+            // Update Chart
+            updateChart(data.slice(0, 20).reverse()); // Kukunin ang 20 para sa chart, ire-reverse para tama ang timeline
+        }
+
+        function updateChart(chartData) {
+            const ctx = document.getElementById('levelChart').getContext('2d');
+            const labels = chartData.map(d => new Date(d.timestamp).toLocaleTimeString());
+            const levels = chartData.map(d => d.waterLevelCm);
+
+            if (chartInstance) {
+                chartInstance.data.labels = labels;
+                chartInstance.data.datasets[0].data = levels;
+                chartInstance.update();
+            } else {
+                chartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Trend (cm)',
+                            data: levels,
+                            borderColor: 'blue',
+                            fill: false,
+                            tension: 0.1
+                        }]
+                    },
+                    options: { animation: false } // Walang animation para mabilis ang 5-second refresh
+                });
+            }
+        }
+
+        // Auto-refresh tuwing 5 segundo
+        setInterval(fetchReadings, 5000);
+        fetchReadings(); // Unang tawag para hindi maghintay ng 5s
+    </script>
+</body>
+</html>
