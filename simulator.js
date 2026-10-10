@@ -2,15 +2,14 @@
 // (tulad ng Arduino o ESP32) na may ultrasonic sensor para sukatin ang tubig, 
 // at magpapadala ng data gamit ang Wi-Fi o MQTT.
 
-const API_URL = "http://localhost:8000/api/readings"; // Palitan ito ng live URL kapag na-deploy na
-let currentWaterLevel = 80.0; // Magsisimula sa 80 cm
+// Pinalitan ng Live URL:
+const API_URL = "http://bantay-baha-monitor.wuaze.com/api.php/api/readings"; 
+let currentWaterLevel = 80.0; 
 
 setInterval(async () => {
-    // Baguhin ang water level nang unti-unti (-2 hanggang +2 cm lang para hindi random tumalon)
     const change = (Math.random() * 4) - 2;
     currentWaterLevel += change;
     
-    // Siguraduhing hindi bababa sa 0 at hindi lalampas sa 500
     if (currentWaterLevel < 0) currentWaterLevel = 0;
     if (currentWaterLevel > 500) currentWaterLevel = 500;
 
@@ -30,4 +29,4 @@ setInterval(async () => {
     } catch (error) {
         console.error("Hindi makakonekta sa API:", error.message);
     }
-}, 5000); // Tumatakbo tuwing 5 segundo
+}, 5000);
